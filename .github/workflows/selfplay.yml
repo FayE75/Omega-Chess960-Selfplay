@@ -9,10 +9,14 @@ on:
         description: "Self-play duration in minutes"
         required: true
         default: "330"
-      nodes:
-        description: "Omega nodes per MultiPV search"
+      tc_base_seconds:
+        description: "LTC base clock per side in seconds"
         required: true
-        default: "15000"
+        default: "60"
+      tc_increment_seconds:
+        description: "LTC increment per move in seconds"
+        required: true
+        default: "0.6"
       multipv:
         description: "Candidate moves analysed at each position"
         required: true
@@ -22,13 +26,13 @@ on:
         required: true
         default: "35"
       book_plies:
-        description: "Opening-book prefix plies before Omega takes over; this does NOT cap learned book depth"
+        description: "Opening-book prefix plies before Omega takes over; does NOT cap learned book depth"
         required: true
-        default: "24"
+        default: "12"
       max_plies:
-        description: "Safety cap per game; learning itself has no opening-depth cutoff"
+        description: "0 = no artificial ply/depth cap; positive value is emergency safety cap only"
         required: true
-        default: "260"
+        default: "0"
       seed:
         description: "Random seed; 0 = derive from workflow run number"
         required: true
@@ -53,11 +57,12 @@ jobs:
     env:
       BASE_BOOK_URL: https://raw.githubusercontent.com/FayE75/NimasBot/main/books/c860/c960_280825_0508.bin
       DURATION_MINUTES: ${{ inputs.duration_minutes || '330' }}
-      NODES: ${{ inputs.nodes || '15000' }}
+      TC_BASE_SECONDS: ${{ inputs.tc_base_seconds || '60' }}
+      TC_INCREMENT_SECONDS: ${{ inputs.tc_increment_seconds || '0.6' }}
       MULTIPV: ${{ inputs.multipv || '3' }}
       GOOD_MOVE_CP: ${{ inputs.good_move_cp || '35' }}
-      BOOK_PLIES: ${{ inputs.book_plies || '24' }}
-      MAX_PLIES: ${{ inputs.max_plies || '260' }}
+      BOOK_PLIES: ${{ inputs.book_plies || '12' }}
+      MAX_PLIES: ${{ inputs.max_plies || '0' }}
       INPUT_SEED: ${{ inputs.seed || '0' }}
 
     steps:
@@ -137,11 +142,13 @@ jobs:
           echo "RUN_SEED=$SEED" >> "$GITHUB_ENV"
           echo "Selfplay seed: $SEED"
 
-      - name: Run 5h30 real Omega Chess960 selfplay from enriched opening prefixes
+      - name: Run 5h30 Fishtest-LTC Omega Chess960 selfplay
         run: |
           echo "Target selfplay duration: ${DURATION_MINUTES} minutes"
-          echo "Search: nodes=${NODES}, MultiPV=${MULTIPV}, allowed_gap=${GOOD_MOVE_CP}cp"
-          echo "Active book prefix cap: ${BOOK_PLIES} plies; Omega must take over after that"
+          echo "Time control: ${TC_BASE_SECONDS}+${TC_INCREMENT_SECONDS} per side"
+          echo "MultiPV=${MULTIPV}; candidate gap=${GOOD_MOVE_CP}cp"
+          echo "Active-book prefix cap: ${BOOK_PLIES} plies"
+          echo "Learned book depth cap: none (MAX_PLIES=${MAX_PLIES}; 0 means unlimited)"
           python scripts/selfplay.py \
             --engine ./omega \
             --engine-id "Omega-${OMEGA_SHA}" \
@@ -149,14 +156,15 @@ jobs:
             --out-dir output \
             --games 0 \
             --duration-minutes "$DURATION_MINUTES" \
-            --nodes "$NODES" \
+            --tc-base-seconds "$TC_BASE_SECONDS" \
+            --tc-increment-seconds "$TC_INCREMENT_SECONDS" \
             --multipv "$MULTIPV" \
             --good-move-cp "$GOOD_MOVE_CP" \
             --book-plies "$BOOK_PLIES" \
             --max-plies "$MAX_PLIES" \
             --seed "$RUN_SEED" \
-            --threads 2 \
-            --hash-mb 256
+            --threads 1 \
+            --hash-mb 64
 
       - name: Filter PGN with strict win-draw-loss learning policy
         run: |
@@ -165,7 +173,7 @@ jobs:
             --pgn output/selfplay.pgn \
             --out output/run_updates_strict.json.gz
           test -s output/run_updates_strict.json.gz
-          echo "Strict policy: loser moves excluded; draw <=10cp; winner <=20cp"
+          echo "Strict policy: loser moves excluded; draw <=10cp; winner <=20cp; no book-depth cutoff"
 
       - name: Build next cumulative enriched Polyglot book
         run: |
@@ -216,7 +224,7 @@ jobs:
               output/latest_summary.json \
               output/selfplay.pgn.gz \
               --title "Latest recursively enriched Chess960 book" \
-              --notes "Automatically updated from NimasBot base book plus cumulative Omega self-play learning. Losing-side moves are excluded; draws require <=10 cp gap; winning-side moves require <=20 cp gap."
+              --notes "Automatically updated from the NimasBot base book plus cumulative Omega self-play at Fishtest-style LTC 60+0.6. Self-play uses a short opening prefix only; learned book depth is uncapped. Losing-side moves are excluded, draws require <=10 cp gap, and winning-side moves require <=20 cp gap."
           fi
 
       - name: Upload PGN and recursively enriched book
