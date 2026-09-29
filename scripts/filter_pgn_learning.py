@@ -19,7 +19,9 @@ def result_for_color(result: str, color: chess.Color) -> str:
         return "win" if color == chess.WHITE else "loss"
     if result == "0-1":
         return "win" if color == chess.BLACK else "loss"
-    return "draw"
+    if result == "1/2-1/2":
+        return "draw"
+    return "unknown"
 
 
 def quality_points(gap_cp: int) -> int:
@@ -37,12 +39,9 @@ def quality_points(gap_cp: int) -> int:
 def accepted_weight(result: str, color: chess.Color, gap_cp: int, ply: int) -> int:
     perspective = result_for_color(result, color)
 
-    # Strict policy: never learn a continuation played by the losing side.
-    if perspective == "loss":
+    if perspective in {"unknown", "loss"}:
         return 0
 
-    # Draws must be very close to the engine's best move. Winners are allowed
-    # a slightly broader but still strong <=20 cp envelope.
     if perspective == "draw" and gap_cp > 10:
         return 0
     if perspective == "win" and gap_cp > 20:
@@ -58,21 +57,28 @@ def accepted_weight(result: str, color: chess.Color, gap_cp: int, ply: int) -> i
 
 
 def main() -> None:
-    p = argparse.ArgumentParser(description="Build strict result-aware Polyglot learning from self-play PGN")
+    p = argparse.ArgumentParser(
+        description="Build strict result-aware Polyglot learning from self-play PGN"
+    )
     p.add_argument("--pgn", required=True)
     p.add_argument("--out", required=True)
     args = p.parse_args()
 
     updates: dict[tuple[int, int], int] = defaultdict(int)
-    games = accepted = rejected_loss = rejected_quality = seed_plies = 0
+    games = accepted = rejected_loss = rejected_quality = book_plies = incomplete_games = 0
 
     with open(args.pgn, "r", encoding="utf-8") as fh:
         while True:
             game = chess.pgn.read_game(fh)
             if game is None:
                 break
+
+            result = game.headers.get("Result", "*")
+            if result not in {"1-0", "0-1", "1/2-1/2"}:
+                incomplete_games += 1
+                continue
+
             games += 1
-            result = game.headers.get("Result", "1/2-1/2")
             board = game.board()
 
             for node in game.mainline():
@@ -81,8 +87,10 @@ def main() -> None:
                 mover = board.turn
                 ply = board.ply()
 
-                if "seed-book" in comment:
-                    seed_plies += 1
+                # Existing active-book prefix is context only. Never add it again
+                # simply because it was replayed at the beginning of self-play.
+                if "active-book" in comment or "seed-book" in comment:
+                    book_plies += 1
                     board.push(move)
                     continue
 
@@ -94,6 +102,7 @@ def main() -> None:
                 gap_cp = int(match.group(1))
                 perspective = result_for_color(result, mover)
                 weight = accepted_weight(result, mover, gap_cp, ply)
+
                 if weight > 0:
                     key = chess.polyglot.zobrist_hash(board)
                     raw_move = encode_polyglot_move(board, move)
@@ -107,15 +116,17 @@ def main() -> None:
                 board.push(move)
 
     metadata = {
-        "policy": "strict-result-aware-v1",
+        "policy": "strict-result-aware-v2",
         "games": games,
+        "incomplete_games_ignored": incomplete_games,
         "accepted_plies": accepted,
         "rejected_losing_side_plies": rejected_loss,
         "rejected_quality_plies": rejected_quality,
-        "seed_book_plies_ignored": seed_plies,
+        "active_book_prefix_plies_ignored": book_plies,
         "winner_max_gap_cp": 20,
         "draw_max_gap_cp": 10,
         "loser_moves": "excluded",
+        "book_depth_limit": "none",
     }
     save_updates(Path(args.out), dict(updates), metadata)
     print(metadata)
