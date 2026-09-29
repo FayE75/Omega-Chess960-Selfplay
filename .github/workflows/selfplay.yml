@@ -48,7 +48,7 @@ permissions:
 
 concurrency:
   group: omega-c960-production
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   selfplay:
