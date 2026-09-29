@@ -39,20 +39,99 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  validate:
+  smoke:
     if: github.event_name == 'push'
     runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      SEED_BOOK_URL: https://raw.githubusercontent.com/FayE75/NimasBot/main/books/c860/c960_280825_0508.bin
     steps:
-      - name: Checkout
+      - name: Checkout selfplay repo
         uses: actions/checkout@v5
+
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Validate selfplay scripts
+
+      - name: Install dependencies
         run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          sudo apt-get update -qq
+          sudo apt-get install -y build-essential git
           python -m py_compile scripts/*.py
-          echo "Omega Chess960 Selfplay workflow registered successfully."
+
+      - name: Clone latest Omega main
+        env:
+          OMEGA_PAT: ${{ secrets.OMEGA_PAT }}
+        run: |
+          test -n "$OMEGA_PAT" || { echo "Missing OMEGA_PAT repository secret"; exit 1; }
+          git clone --depth 1 --branch main --single-branch \
+            "https://x-access-token:${OMEGA_PAT}@github.com/FayE75/Omega.git" Omega
+          echo "OMEGA_SHA=$(git -C Omega rev-parse HEAD)" >> "$GITHUB_ENV"
+          git -C Omega log -1 --oneline
+
+      - name: Build optimized Omega
+        run: |
+          make -C Omega/src -j"$(nproc)" profile-build ARCH=x86-64-avx2 COMP=gcc
+          ENGINE=$(find Omega/src -maxdepth 2 -type f -executable -iname 'stockfish*' -print -quit)
+          test -n "$ENGINE"
+          cp "$ENGINE" ./omega
+          chmod +x ./omega
+          ./omega bench >/tmp/omega-bench.txt 2>&1
+          tail -20 /tmp/omega-bench.txt
+
+      - name: Fetch current NimasBot Chess960 seed book
+        run: |
+          mkdir -p seed output
+          curl --fail --location --retry 3 --retry-delay 3 \
+            "$SEED_BOOK_URL" -o seed/c960_seed.bin
+          ls -lh seed/c960_seed.bin
+          sha256sum seed/c960_seed.bin
+
+      - name: Run 2-game smoke selfplay
+        run: |
+          python scripts/selfplay.py \
+            --engine ./omega \
+            --engine-id "Omega-${OMEGA_SHA}" \
+            --book seed/c960_seed.bin \
+            --out-dir output \
+            --games 2 \
+            --nodes 1000 \
+            --book-plies 12 \
+            --train-plies 40 \
+            --seed 20260929 \
+            --threads 1 \
+            --hash-mb 128
+
+      - name: Build smoke enriched Polyglot book
+        run: |
+          python scripts/build_book.py \
+            --seed-book seed/c960_seed.bin \
+            --run-updates output/run_updates.json.gz \
+            --cumulative-out output/cumulative_updates.json.gz \
+            --enriched-out output/c960_enriched.bin \
+            --delta-out output/c960_run_delta.bin \
+            --summary output/summary.json
+          test -s output/selfplay.pgn
+          test -s output/c960_enriched.bin
+          ls -lh output/
+
+      - name: Upload smoke artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: omega-c960-smoke-${{ github.run_number }}
+          path: |
+            output/selfplay.pgn
+            output/summary.json
+            output/run_updates.json.gz
+            output/cumulative_updates.json.gz
+            output/c960_run_delta.bin
+            output/c960_enriched.bin
+          if-no-files-found: warn
+          retention-days: 7
 
   selfplay:
     if: github.event_name == 'workflow_dispatch'
