@@ -31,9 +31,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--choice-temperature-cp", type=float, default=14.0,
                    help="Softmax temperature for choosing among good candidates")
     p.add_argument("--book-plies", type=int, default=0,
-                   help="0 = follow the active enriched book until its line ends; positive value caps book plies")
-    p.add_argument("--max-book-plies-safety", type=int, default=512,
-                   help="Safety cap when --book-plies=0")
+                   help="0 = follow the active recursively enriched book until its line ends")
     p.add_argument("--max-plies", type=int, default=260)
     p.add_argument("--threads", type=int, default=1)
     p.add_argument("--hash-mb", type=int, default=128)
@@ -45,7 +43,11 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--draw-plies", type=int, default=12)
     p.add_argument("--draw-after-ply", type=int, default=90)
     p.add_argument("--book-weight-power", type=float, default=0.55,
-                   help="<1 flattens active-book weights to increase line diversity")
+                   help="<1 flattens existing book weights to increase line diversity")
+    p.add_argument("--draw-learn-gap-cp", type=int, default=10,
+                   help="Drawn games learn only moves this close to the engine best move")
+    p.add_argument("--learn-min-cp", type=int, default=-100,
+                   help="Do not learn a continuation if its evaluation is worse than this for the mover")
     return p.parse_args()
 
 
@@ -62,13 +64,7 @@ def choose_weighted(entries: list[chess.polyglot.Entry], rng: random.Random, pow
     return rng.choices(entries, weights=weights, k=1)[0]
 
 
-def start_with_book(
-    reader: chess.polyglot.MemoryMappedReader,
-    rng: random.Random,
-    book_plies: int,
-    max_book_plies_safety: int,
-    power: float,
-):
+def start_with_book(reader: chess.polyglot.MemoryMappedReader, rng: random.Random, book_plies: int, power: float):
     for _ in range(4000):
         index = rng.randrange(960)
         board = chess.Board.from_chess960_pos(index)
@@ -81,9 +77,8 @@ def start_with_book(
 
         initial = board.copy(stack=False)
         seed_moves: list[tuple[int, chess.Move, int]] = []
-        cap = book_plies if book_plies > 0 else max_book_plies_safety
-
-        for _ply in range(cap):
+        ply_limit = book_plies if book_plies > 0 else 512
+        for _ply in range(ply_limit):
             entries = list(reader.find_all(board))
             if not entries:
                 break
@@ -93,7 +88,8 @@ def start_with_book(
                 break
             seed_moves.append((chess.polyglot.zobrist_hash(board), move, entry.weight))
             board.push(move)
-
+            if board.is_game_over(claim_draw=True):
+                break
         return index, initial, board, seed_moves
     raise RuntimeError("Could not find a Chess960 start position covered by the active book.")
 
@@ -124,20 +120,46 @@ def quality_points(gap_cp: int) -> int:
     return 1
 
 
-def learned_weight(result: str, color: chess.Color, gap_cp: int, ply: int) -> int:
-    result_factor = {"win": 1.35, "draw": 1.0, "loss": 0.55}[result_for_color(result, color)]
+def learning_decision(
+    result: str,
+    color: chess.Color,
+    gap_cp: int,
+    eval_cp: int,
+    ply: int,
+    draw_gap_cp: int,
+    min_eval_cp: int,
+) -> tuple[int, str]:
+    """Return (weight, reason) for one continuation move.
+
+    Policy intentionally avoids learning every self-play move:
+    * loss: never learn the losing side's continuation;
+    * draw: learn only near-best moves;
+    * win: learn good candidate moves, but never from an already clearly bad position;
+    * all accepted moves retain quality and gentle depth weighting.
+    """
+    perspective = result_for_color(result, color)
+
+    if perspective == "loss":
+        return 0, "reject_loss"
+    if eval_cp < min_eval_cp:
+        return 0, "reject_bad_eval"
+    if perspective == "draw" and gap_cp > draw_gap_cp:
+        return 0, "reject_draw_gap"
+
+    result_factor = 1.50 if perspective == "win" else 0.60
     depth_factor = max(0.30, math.exp(-max(0, ply - 40) / 140.0))
-    return max(1, int(round(quality_points(gap_cp) * result_factor * depth_factor)))
+    weight = max(1, int(round(quality_points(gap_cp) * result_factor * depth_factor)))
+    return weight, f"accept_{perspective}"
 
 
 def configure_engine(engine: chess.engine.SimpleEngine, threads: int, hash_mb: int) -> None:
-    # python-chess automatically manages protocol-sensitive UCI options such as
-    # Ponder and UCI_Chess960. Configuring Ponder manually raises EngineError.
     options = {}
     if "Threads" in engine.options:
         options["Threads"] = threads
     if "Hash" in engine.options:
         options["Hash"] = hash_mb
+    # Do not set Ponder here. python-chess manages Ponder automatically and
+    # raises EngineError when callers attempt to configure it directly.
     if options:
         engine.configure(options)
 
@@ -212,6 +234,7 @@ def main() -> None:
     book_hash = sha256(book_path)
     updates: dict[tuple[int, int], int] = defaultdict(int)
     stats = {"1-0": 0, "0-1": 0, "1/2-1/2": 0}
+    learning_stats: dict[str, int] = defaultdict(int)
     total_plies = 0
     started = time.time()
     deadline = started + max(1.0, args.duration_minutes) * 60.0
@@ -233,11 +256,7 @@ def main() -> None:
                 game_no += 1
 
                 index, initial, board, seed_moves = start_with_book(
-                    reader,
-                    rng,
-                    args.book_plies,
-                    args.max_book_plies_safety,
-                    args.book_weight_power,
+                    reader, rng, args.book_plies, args.book_weight_power
                 )
 
                 game = chess.pgn.Game()
@@ -249,8 +268,7 @@ def main() -> None:
                 game.headers["Black"] = args.engine_id
                 game.headers["Variant"] = "Chess960"
                 game.headers["Scharnagl"] = str(index)
-                game.headers["ActiveBookSHA256"] = book_hash
-                game.headers["BookPlies"] = str(len(seed_moves))
+                game.headers["SeedBookSHA256"] = book_hash
                 node = game
 
                 replay = initial.copy(stack=False)
@@ -259,7 +277,9 @@ def main() -> None:
                     node.comment = f"active-book weight={weight}"
                     replay.push(move)
 
-                training: list[tuple[int, int, chess.Color, int, int]] = []
+                # Continuations only. Existing active-book moves are not learned
+                # again merely for being replayed; this prevents runaway feedback.
+                training: list[tuple[int, int, chess.Color, int, int, int]] = []
                 bad_streak = {chess.WHITE: 0, chess.BLACK: 0}
                 equal_streak = 0
                 result = "*"
@@ -289,7 +309,7 @@ def main() -> None:
                         game_token,
                     )
 
-                    training.append((key, encode_polyglot_move(board, move), mover, board.ply(), gap_cp))
+                    training.append((key, encode_polyglot_move(board, move), mover, board.ply(), gap_cp, cp))
                     node = node.add_variation(move)
                     candidates_txt = ",".join(f"{uci}:{score/100:.2f}/{gap}" for uci, score, gap in preview)
                     node.comment = (
@@ -323,15 +343,26 @@ def main() -> None:
                 total_plies += board.ply()
                 completed_games += 1
 
-                for key, raw_move, color, ply, gap_cp in training:
-                    updates[(key, raw_move)] += learned_weight(result, color, gap_cp, ply)
+                for key, raw_move, color, ply, gap_cp, eval_cp in training:
+                    delta, reason = learning_decision(
+                        result,
+                        color,
+                        gap_cp,
+                        eval_cp,
+                        ply,
+                        args.draw_learn_gap_cp,
+                        args.learn_min_cp,
+                    )
+                    learning_stats[reason] += 1
+                    if delta > 0:
+                        updates[(key, raw_move)] += delta
 
                 print(game, file=pgn_out, end="\n\n")
                 pgn_out.flush()
                 elapsed_min = (time.time() - started) / 60.0
                 print(
                     f"game {game_no} start={index:03d} result={result} plies={board.ply()} "
-                    f"book_plies={len(seed_moves)} learned={len(updates)} elapsed={elapsed_min:.1f}m"
+                    f"learned={len(updates)} elapsed={elapsed_min:.1f}m"
                 )
     finally:
         white_engine.quit()
@@ -351,9 +382,14 @@ def main() -> None:
         "training_depth": "unlimited_until_game_end",
         "max_plies_safety": args.max_plies,
         "seed": args.seed,
-        "weighting": {
+        "learning_policy": {
+            "win": "accepted if eval >= learn_min_cp and candidate gap <= good_move_cp",
+            "draw": "accepted only if eval >= learn_min_cp and gap <= draw_learn_gap_cp",
+            "loss": "never learned",
+            "draw_learn_gap_cp": args.draw_learn_gap_cp,
+            "learn_min_cp": args.learn_min_cp,
             "quality_gap_points": {"<=2": 20, "<=5": 16, "<=10": 12, "<=20": 8, "<=35": 4, "<=50": 2, "other": 1},
-            "result_factor": {"win": 1.35, "draw": 1.0, "loss": 0.55},
+            "result_factor": {"win": 1.50, "draw": 0.60, "loss": 0.0},
             "depth_decay": "max(0.30, exp(-max(0, ply-40)/140))",
         },
     }
@@ -361,6 +397,7 @@ def main() -> None:
     summary = {
         **metadata,
         "results": stats,
+        "learning_decisions": dict(sorted(learning_stats.items())),
         "unique_learned_moves": len(updates),
         "total_plies": total_plies,
         "elapsed_seconds": round(elapsed, 3),
