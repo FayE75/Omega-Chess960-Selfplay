@@ -8,6 +8,7 @@ from pathlib import Path
 
 import chess
 import chess.pgn
+import chess.polyglot
 
 from polyglot_utils import encode_polyglot_move, save_updates
 
