@@ -1,6 +1,8 @@
 name: Omega Chess960 Selfplay
 
 on:
+  schedule:
+    - cron: "17 */6 * * *"
   workflow_dispatch:
     inputs:
       duration_minutes:
@@ -20,9 +22,9 @@ on:
         required: true
         default: "35"
       book_plies:
-        description: "Maximum plies initially forced from the existing Chess960 seed book"
+        description: "0 = follow the recursively enriched book until its line ends"
         required: true
-        default: "12"
+        default: "0"
       max_plies:
         description: "Safety cap per game; learning itself has no opening-depth cutoff"
         required: true
@@ -49,12 +51,12 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 355
     env:
-      SEED_BOOK_URL: https://raw.githubusercontent.com/FayE75/NimasBot/main/books/c860/c960_280825_0508.bin
+      BASE_BOOK_URL: https://raw.githubusercontent.com/FayE75/NimasBot/main/books/c860/c960_280825_0508.bin
       DURATION_MINUTES: ${{ inputs.duration_minutes || '330' }}
       NODES: ${{ inputs.nodes || '15000' }}
       MULTIPV: ${{ inputs.multipv || '3' }}
       GOOD_MOVE_CP: ${{ inputs.good_move_cp || '35' }}
-      BOOK_PLIES: ${{ inputs.book_plies || '12' }}
+      BOOK_PLIES: ${{ inputs.book_plies || '0' }}
       MAX_PLIES: ${{ inputs.max_plies || '260' }}
       INPUT_SEED: ${{ inputs.seed || '0' }}
 
@@ -100,32 +102,50 @@ jobs:
           ./omega bench >/tmp/omega-bench.txt 2>&1
           tail -20 /tmp/omega-bench.txt
 
-      - name: Fetch current NimasBot Chess960 seed book
+      - name: Fetch original NimasBot Chess960 base book
         run: |
           mkdir -p seed output learning
           curl --fail --location --retry 3 --retry-delay 3 \
-            "$SEED_BOOK_URL" -o seed/c960_seed.bin
-          test -s seed/c960_seed.bin
-          ls -lh seed/c960_seed.bin
-          sha256sum seed/c960_seed.bin
+            "$BASE_BOOK_URL" -o seed/c960_base.bin
+          test -s seed/c960_base.bin
+          echo "Original Nimas base book:"
+          ls -lh seed/c960_base.bin
+          sha256sum seed/c960_base.bin
+
+      - name: Materialize recursively enriched active book
+        run: |
+          if [ -s learning/cumulative_updates.json.gz ]; then
+            python scripts/materialize_active_book.py \
+              --seed-book seed/c960_base.bin \
+              --updates learning/cumulative_updates.json.gz \
+              --out seed/c960_active.bin
+            echo "Using Nimas base + all previous selfplay learning"
+          else
+            cp seed/c960_base.bin seed/c960_active.bin
+            echo "First generation: using original Nimas book"
+          fi
+          test -s seed/c960_active.bin
+          ls -lh seed/c960_active.bin
+          sha256sum seed/c960_active.bin
 
       - name: Resolve run seed
         run: |
           SEED="$INPUT_SEED"
           if [ "$SEED" = "0" ] || [ -z "$SEED" ]; then
-            SEED=$((20260929 + GITHUB_RUN_NUMBER))
+            SEED=$((20260929 + GITHUB_RUN_NUMBER + GITHUB_RUN_ATTEMPT * 100000))
           fi
           echo "RUN_SEED=$SEED" >> "$GITHUB_ENV"
           echo "Selfplay seed: $SEED"
 
-      - name: Run 5h30 quality-weighted Omega vs Omega Chess960 selfplay
+      - name: Run 5h30 recursive quality-weighted Omega Chess960 selfplay
         run: |
           echo "Target selfplay duration: ${DURATION_MINUTES} minutes"
           echo "Search: nodes=${NODES}, MultiPV=${MULTIPV}, allowed_gap=${GOOD_MOVE_CP}cp"
+          echo "Book depth: ${BOOK_PLIES} (0 means follow active enriched line until it ends)"
           python scripts/selfplay.py \
             --engine ./omega \
             --engine-id "Omega-${OMEGA_SHA}" \
-            --book seed/c960_seed.bin \
+            --book seed/c960_active.bin \
             --out-dir output \
             --games 0 \
             --duration-minutes "$DURATION_MINUTES" \
@@ -138,14 +158,14 @@ jobs:
             --threads 2 \
             --hash-mb 256
 
-      - name: Build cumulative enriched Polyglot book
+      - name: Build next cumulative enriched Polyglot book
         run: |
           PRIOR=""
           if [ -s learning/cumulative_updates.json.gz ]; then
             PRIOR="--prior-updates learning/cumulative_updates.json.gz"
           fi
           python scripts/build_book.py \
-            --seed-book seed/c960_seed.bin \
+            --seed-book seed/c960_base.bin \
             --run-updates output/run_updates.json.gz \
             $PRIOR \
             --cumulative-out output/cumulative_updates.json.gz \
@@ -157,7 +177,7 @@ jobs:
           gzip -9 -c output/selfplay.pgn > output/selfplay.pgn.gz
           ls -lh output/
 
-      - name: Persist cumulative learning state
+      - name: Persist cumulative learning state for the next run
         run: |
           mkdir -p learning
           cp output/cumulative_updates.json.gz learning/cumulative_updates.json.gz
@@ -170,8 +190,7 @@ jobs:
             git push
           fi
 
-      - name: Upload PGN and enriched books
-        if: always()
+      - name: Upload PGN and recursively enriched book
         uses: actions/upload-artifact@v4
         with:
           name: omega-c960-selfplay-${{ github.run_number }}
@@ -183,5 +202,5 @@ jobs:
             output/cumulative_updates.json.gz
             output/c960_run_delta.bin
             output/c960_enriched.bin
-          if-no-files-found: warn
+          if-no-files-found: error
           retention-days: 30
