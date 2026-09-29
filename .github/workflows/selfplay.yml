@@ -23,16 +23,39 @@ on:
         description: "Random seed"
         required: true
         default: "20260929"
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/selfplay.yml"
+      - "scripts/**"
+      - "requirements.txt"
 
 permissions:
   contents: write
 
 concurrency:
-  group: omega-c960-selfplay
+  group: omega-c960-selfplay-${{ github.event_name }}
   cancel-in-progress: false
 
 jobs:
+  validate:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Validate selfplay scripts
+        run: |
+          python -m py_compile scripts/*.py
+          echo "Omega Chess960 Selfplay workflow registered successfully."
+
   selfplay:
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 330
     env:
