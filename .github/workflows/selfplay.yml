@@ -149,7 +149,7 @@ jobs:
           echo "MultiPV=${MULTIPV}; candidate gap=${GOOD_MOVE_CP}cp"
           echo "Active-book prefix cap: ${BOOK_PLIES} plies"
           echo "Learned book depth cap: none (MAX_PLIES=${MAX_PLIES}; 0 means unlimited)"
-          python scripts/selfplay.py \
+          python -u scripts/selfplay.py \
             --engine ./omega \
             --engine-id "Omega-${OMEGA_SHA}" \
             --book seed/c960_active.bin \
