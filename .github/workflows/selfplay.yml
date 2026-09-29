@@ -22,9 +22,9 @@ on:
         required: true
         default: "35"
       book_plies:
-        description: "0 = follow the recursively enriched book until its line ends"
+        description: "Opening-book prefix plies before Omega takes over; this does NOT cap learned book depth"
         required: true
-        default: "0"
+        default: "24"
       max_plies:
         description: "Safety cap per game; learning itself has no opening-depth cutoff"
         required: true
@@ -44,7 +44,7 @@ permissions:
 
 concurrency:
   group: omega-c960-production
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   selfplay:
@@ -56,7 +56,7 @@ jobs:
       NODES: ${{ inputs.nodes || '15000' }}
       MULTIPV: ${{ inputs.multipv || '3' }}
       GOOD_MOVE_CP: ${{ inputs.good_move_cp || '35' }}
-      BOOK_PLIES: ${{ inputs.book_plies || '0' }}
+      BOOK_PLIES: ${{ inputs.book_plies || '24' }}
       MAX_PLIES: ${{ inputs.max_plies || '260' }}
       INPUT_SEED: ${{ inputs.seed || '0' }}
 
@@ -137,11 +137,11 @@ jobs:
           echo "RUN_SEED=$SEED" >> "$GITHUB_ENV"
           echo "Selfplay seed: $SEED"
 
-      - name: Run 5h30 recursive quality-weighted Omega Chess960 selfplay
+      - name: Run 5h30 real Omega Chess960 selfplay from enriched opening prefixes
         run: |
           echo "Target selfplay duration: ${DURATION_MINUTES} minutes"
           echo "Search: nodes=${NODES}, MultiPV=${MULTIPV}, allowed_gap=${GOOD_MOVE_CP}cp"
-          echo "Book depth: ${BOOK_PLIES} (0 means follow active enriched line until it ends)"
+          echo "Active book prefix cap: ${BOOK_PLIES} plies; Omega must take over after that"
           python scripts/selfplay.py \
             --engine ./omega \
             --engine-id "Omega-${OMEGA_SHA}" \
