@@ -158,6 +158,15 @@ jobs:
             --threads 2 \
             --hash-mb 256
 
+      - name: Filter PGN with strict win-draw-loss learning policy
+        run: |
+          test -s output/selfplay.pgn
+          python scripts/filter_pgn_learning.py \
+            --pgn output/selfplay.pgn \
+            --out output/run_updates_strict.json.gz
+          test -s output/run_updates_strict.json.gz
+          echo "Strict policy: loser moves excluded; draw <=10cp; winner <=20cp"
+
       - name: Build next cumulative enriched Polyglot book
         run: |
           PRIOR=""
@@ -166,13 +175,12 @@ jobs:
           fi
           python scripts/build_book.py \
             --seed-book seed/c960_base.bin \
-            --run-updates output/run_updates.json.gz \
+            --run-updates output/run_updates_strict.json.gz \
             $PRIOR \
             --cumulative-out output/cumulative_updates.json.gz \
             --enriched-out output/c960_enriched.bin \
             --delta-out output/c960_run_delta.bin \
             --summary output/summary.json
-          test -s output/selfplay.pgn
           test -s output/c960_enriched.bin
           gzip -9 -c output/selfplay.pgn > output/selfplay.pgn.gz
           ls -lh output/
@@ -190,6 +198,27 @@ jobs:
             git push
           fi
 
+      - name: Publish latest upgraded Chess960 book to repository release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cp output/c960_enriched.bin output/c960_enriched_latest.bin
+          cp output/summary.json output/latest_summary.json
+          if gh release view book-latest >/dev/null 2>&1; then
+            gh release upload book-latest \
+              output/c960_enriched_latest.bin \
+              output/latest_summary.json \
+              output/selfplay.pgn.gz \
+              --clobber
+          else
+            gh release create book-latest \
+              output/c960_enriched_latest.bin \
+              output/latest_summary.json \
+              output/selfplay.pgn.gz \
+              --title "Latest recursively enriched Chess960 book" \
+              --notes "Automatically updated from NimasBot base book plus cumulative Omega self-play learning. Losing-side moves are excluded; draws require <=10 cp gap; winning-side moves require <=20 cp gap."
+          fi
+
       - name: Upload PGN and recursively enriched book
         uses: actions/upload-artifact@v4
         with:
@@ -199,6 +228,7 @@ jobs:
             output/selfplay.pgn.gz
             output/summary.json
             output/run_updates.json.gz
+            output/run_updates_strict.json.gz
             output/cumulative_updates.json.gz
             output/c960_run_delta.bin
             output/c960_enriched.bin
