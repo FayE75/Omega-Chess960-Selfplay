@@ -166,6 +166,18 @@ jobs:
             --threads 1 \
             --hash-mb 64
 
+      - name: Preserve raw selfplay output
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: omega-c960-raw-${{ github.run_number }}
+          path: |
+            output/selfplay.pgn
+            output/summary.json
+            output/run_updates.json.gz
+          if-no-files-found: warn
+          retention-days: 30
+
       - name: Filter PGN with strict win-draw-loss learning policy
         run: |
           test -s output/selfplay.pgn
