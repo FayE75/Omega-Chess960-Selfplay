@@ -30,7 +30,10 @@ def parse_args() -> argparse.Namespace:
                    help="Only candidate moves within this centipawn gap from the best move may be selected")
     p.add_argument("--choice-temperature-cp", type=float, default=14.0,
                    help="Softmax temperature for choosing among good candidates")
-    p.add_argument("--book-plies", type=int, default=12)
+    p.add_argument("--book-plies", type=int, default=0,
+                   help="0 = follow the active enriched book until its line ends; positive value caps book plies")
+    p.add_argument("--max-book-plies-safety", type=int, default=512,
+                   help="Safety cap when --book-plies=0")
     p.add_argument("--max-plies", type=int, default=260)
     p.add_argument("--threads", type=int, default=1)
     p.add_argument("--hash-mb", type=int, default=128)
@@ -42,7 +45,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--draw-plies", type=int, default=12)
     p.add_argument("--draw-after-ply", type=int, default=90)
     p.add_argument("--book-weight-power", type=float, default=0.55,
-                   help="<1 flattens existing seed-book weights to increase line diversity")
+                   help="<1 flattens active-book weights to increase line diversity")
     return p.parse_args()
 
 
@@ -59,7 +62,13 @@ def choose_weighted(entries: list[chess.polyglot.Entry], rng: random.Random, pow
     return rng.choices(entries, weights=weights, k=1)[0]
 
 
-def start_with_book(reader: chess.polyglot.MemoryMappedReader, rng: random.Random, book_plies: int, power: float):
+def start_with_book(
+    reader: chess.polyglot.MemoryMappedReader,
+    rng: random.Random,
+    book_plies: int,
+    max_book_plies_safety: int,
+    power: float,
+):
     for _ in range(4000):
         index = rng.randrange(960)
         board = chess.Board.from_chess960_pos(index)
@@ -72,7 +81,9 @@ def start_with_book(reader: chess.polyglot.MemoryMappedReader, rng: random.Rando
 
         initial = board.copy(stack=False)
         seed_moves: list[tuple[int, chess.Move, int]] = []
-        for _ply in range(book_plies):
+        cap = book_plies if book_plies > 0 else max_book_plies_safety
+
+        for _ply in range(cap):
             entries = list(reader.find_all(board))
             if not entries:
                 break
@@ -82,8 +93,9 @@ def start_with_book(reader: chess.polyglot.MemoryMappedReader, rng: random.Rando
                 break
             seed_moves.append((chess.polyglot.zobrist_hash(board), move, entry.weight))
             board.push(move)
+
         return index, initial, board, seed_moves
-    raise RuntimeError("Could not find a Chess960 start position covered by the seed book.")
+    raise RuntimeError("Could not find a Chess960 start position covered by the active book.")
 
 
 def result_for_color(result: str, color: chess.Color) -> str:
@@ -113,21 +125,19 @@ def quality_points(gap_cp: int) -> int:
 
 
 def learned_weight(result: str, color: chess.Color, gap_cp: int, ply: int) -> int:
-    # The binary book may become arbitrarily deep in number of positions; deeper
-    # moves simply receive a gentle decay rather than a hard training cutoff.
     result_factor = {"win": 1.35, "draw": 1.0, "loss": 0.55}[result_for_color(result, color)]
     depth_factor = max(0.30, math.exp(-max(0, ply - 40) / 140.0))
     return max(1, int(round(quality_points(gap_cp) * result_factor * depth_factor)))
 
 
 def configure_engine(engine: chess.engine.SimpleEngine, threads: int, hash_mb: int) -> None:
+    # python-chess automatically manages protocol-sensitive UCI options such as
+    # Ponder and UCI_Chess960. Configuring Ponder manually raises EngineError.
     options = {}
     if "Threads" in engine.options:
         options["Threads"] = threads
     if "Hash" in engine.options:
         options["Hash"] = hash_mb
-    if "Ponder" in engine.options:
-        options["Ponder"] = False
     if options:
         engine.configure(options)
 
@@ -166,7 +176,6 @@ def analyse_good_moves(
     if not candidates:
         raise RuntimeError("Omega returned no scored PV candidate.")
 
-    # Highest score is best from the side-to-move perspective.
     candidates.sort(key=lambda x: x[1], reverse=True)
     best_cp = candidates[0][1]
     good: list[tuple[chess.Move, int, int]] = []
@@ -224,7 +233,11 @@ def main() -> None:
                 game_no += 1
 
                 index, initial, board, seed_moves = start_with_book(
-                    reader, rng, args.book_plies, args.book_weight_power
+                    reader,
+                    rng,
+                    args.book_plies,
+                    args.max_book_plies_safety,
+                    args.book_weight_power,
                 )
 
                 game = chess.pgn.Game()
@@ -236,20 +249,16 @@ def main() -> None:
                 game.headers["Black"] = args.engine_id
                 game.headers["Variant"] = "Chess960"
                 game.headers["Scharnagl"] = str(index)
-                game.headers["SeedBookSHA256"] = book_hash
+                game.headers["ActiveBookSHA256"] = book_hash
+                game.headers["BookPlies"] = str(len(seed_moves))
                 node = game
 
-                # Existing seed-book plies are preserved exactly. We do not add
-                # learning weight to them because their established weights are
-                # already part of the source book.
                 replay = initial.copy(stack=False)
                 for _ply, (_key, move, weight) in enumerate(seed_moves):
                     node = node.add_variation(move)
-                    node.comment = f"seed-book weight={weight}"
+                    node.comment = f"active-book weight={weight}"
                     replay.push(move)
 
-                # Continuations have no fixed opening-depth cutoff. Every Omega
-                # move until termination may contribute to cumulative learning.
                 training: list[tuple[int, int, chess.Color, int, int]] = []
                 bad_streak = {chess.WHITE: 0, chess.BLACK: 0}
                 equal_streak = 0
@@ -258,8 +267,6 @@ def main() -> None:
 
                 while board.ply() < args.max_plies:
                     if time.time() >= deadline:
-                        # Finish the current game quickly as an adjudicated draw
-                        # so PGN/book state remains consistent before shutdown.
                         result = "1/2-1/2"
                         break
 
@@ -324,7 +331,7 @@ def main() -> None:
                 elapsed_min = (time.time() - started) / 60.0
                 print(
                     f"game {game_no} start={index:03d} result={result} plies={board.ply()} "
-                    f"learned={len(updates)} elapsed={elapsed_min:.1f}m"
+                    f"book_plies={len(seed_moves)} learned={len(updates)} elapsed={elapsed_min:.1f}m"
                 )
     finally:
         white_engine.quit()
@@ -333,14 +340,14 @@ def main() -> None:
     elapsed = time.time() - started
     metadata = {
         "engine": args.engine_id,
-        "seed_book_sha256": book_hash,
+        "active_book_sha256": book_hash,
         "games": completed_games,
         "duration_minutes_requested": args.duration_minutes,
         "nodes_per_move": args.nodes,
         "multipv": args.multipv,
         "good_move_cp": args.good_move_cp,
         "choice_temperature_cp": args.choice_temperature_cp,
-        "book_plies": args.book_plies,
+        "book_plies": "until_active_book_line_ends" if args.book_plies == 0 else args.book_plies,
         "training_depth": "unlimited_until_game_end",
         "max_plies_safety": args.max_plies,
         "seed": args.seed,
