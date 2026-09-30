@@ -1,6 +1,6 @@
 {
   "engine": "Omega-3ae6ac83823605c9a6fc69c40c2cd9dedc5de6a8",
-  "active_book_sha256": "0b61b4203a5706f7851514db6ca19fe52a642871096de0854809190636758ded",
+  "active_book_sha256": "3fa61f84d1b4f2177c3820f1451187c5d28a4fa1eb0ea34b349d15e8168277be",
   "games": 116,
   "duration_minutes_requested": 330.0,
   "time_control": {
@@ -15,7 +15,7 @@
   "book_prefix_plies": 12,
   "training_depth": "no_artificial_ply_cap",
   "max_plies": 0,
-  "seed": 20360938,
+  "seed": 20360940,
   "learning_policy": {
     "win": "accepted only if eval >= -100cp and gap <= 20cp",
     "draw": "accepted only if eval >= -100cp and gap <= 10cp",
@@ -36,28 +36,28 @@
     "depth_decay": "weighting only, not rejection: max(0.30, exp(-max(0, ply-40)/140))"
   },
   "results": {
-    "1-0": 6,
-    "0-1": 3,
-    "1/2-1/2": 107
+    "1-0": 9,
+    "0-1": 1,
+    "1/2-1/2": 106
   },
   "learning_decisions": {
-    "accept_draw": 8983,
-    "accept_win": 586,
-    "reject_bad_eval": 149,
-    "reject_draw_gap": 753,
-    "reject_loss": 603,
-    "reject_win_gap": 14
+    "accept_draw": 8700,
+    "accept_win": 592,
+    "reject_bad_eval": 184,
+    "reject_draw_gap": 750,
+    "reject_loss": 601,
+    "reject_win_gap": 8
   },
-  "unique_learned_moves": 9508,
-  "total_plies": 12363,
-  "total_engine_plies": 11088,
-  "total_search_seconds": 19943.082,
-  "total_searched_nodes": 20154243622,
-  "avg_search_ms_per_engine_ply": 1798.619,
-  "elapsed_seconds": 19968.725,
-  "games_per_hour": 20.91,
-  "prior_learned_moves": 0,
-  "run_learned_moves": 9637,
-  "cumulative_learned_moves": 9637,
-  "enriched_book_bytes": 82693248
+  "unique_learned_moves": 9223,
+  "total_plies": 12081,
+  "total_engine_plies": 10835,
+  "total_search_seconds": 19876.666,
+  "total_searched_nodes": 25377433872,
+  "avg_search_ms_per_engine_ply": 1834.487,
+  "elapsed_seconds": 19898.615,
+  "games_per_hour": 20.99,
+  "prior_learned_moves": 9637,
+  "run_learned_moves": 9388,
+  "cumulative_learned_moves": 19025,
+  "enriched_book_bytes": 82841216
 }
