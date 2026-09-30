@@ -28,7 +28,7 @@ on:
       book_plies:
         description: "Opening-book prefix plies before Omega takes over; does NOT cap learned book depth"
         required: true
-        default: "12"
+        default: "6"
       max_plies:
         description: "0 = no artificial ply/depth cap; positive value is emergency safety cap only"
         required: true
@@ -61,7 +61,7 @@ jobs:
       TC_INCREMENT_SECONDS: ${{ inputs.tc_increment_seconds || '0.6' }}
       MULTIPV: ${{ inputs.multipv || '3' }}
       GOOD_MOVE_CP: ${{ inputs.good_move_cp || '35' }}
-      BOOK_PLIES: ${{ inputs.book_plies || '12' }}
+      BOOK_PLIES: ${{ inputs.book_plies || '6' }}
       MAX_PLIES: ${{ inputs.max_plies || '0' }}
       INPUT_SEED: ${{ inputs.seed || '0' }}
 
@@ -69,7 +69,8 @@ jobs:
       - name: Checkout selfplay repo
         uses: actions/checkout@v5
         with:
-          fetch-depth: 1
+          ref: main
+          fetch-depth: 0
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -215,7 +216,22 @@ jobs:
           git add learning/cumulative_updates.json.gz learning/latest_summary.json
           if ! git diff --cached --quiet; then
             git commit -m "Update cumulative Chess960 selfplay learning [skip ci]"
-            git push
+            for attempt in 1 2 3; do
+              git fetch origin main
+              if git rebase origin/main; then
+                if git push origin HEAD:main; then
+                  exit 0
+                fi
+              else
+                git rebase --abort || true
+                echo "Rebase conflict while persisting learning state; refusing to overwrite remote learning."
+                exit 1
+              fi
+              echo "Push race on attempt ${attempt}; retrying..."
+              sleep $((attempt * 5))
+            done
+            echo "Failed to persist cumulative learning state after retries."
+            exit 1
           fi
 
       - name: Publish latest upgraded Chess960 book to repository release
