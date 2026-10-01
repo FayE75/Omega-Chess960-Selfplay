@@ -11,7 +11,7 @@ on:
       games:
         description: "Even number of paired-color LTC games"
         required: true
-        default: "8"
+        default: "108"
       tc_base_seconds:
         description: "LTC base clock per side"
         required: true
@@ -42,10 +42,10 @@ jobs:
   challenge:
     if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    timeout-minutes: 355
     env:
       BASE_BOOK_URL: https://raw.githubusercontent.com/FayE75/NimasBot/main/books/c860/c960_280825_0508.bin
-      GAMES: ${{ inputs.games || '8' }}
+      GAMES: ${{ inputs.games || '108' }}
       TC_BASE_SECONDS: ${{ inputs.tc_base_seconds || '60' }}
       TC_INCREMENT_SECONDS: ${{ inputs.tc_increment_seconds || '0.6' }}
       INPUT_SEED: ${{ inputs.seed || '0' }}
