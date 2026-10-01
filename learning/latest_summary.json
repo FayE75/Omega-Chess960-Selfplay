@@ -1,7 +1,7 @@
 {
   "engine": "Omega-3ae6ac83823605c9a6fc69c40c2cd9dedc5de6a8",
-  "active_book_sha256": "3c91ff43ce4425bc129d2c075ac220b3d514e7dd0d9d8c73eb92a5406ca55ccf",
-  "games": 113,
+  "active_book_sha256": "961d98f8227e8568a89d5df7b142e597d4fd30b1ea66d2385227d4965f674c0c",
+  "games": 114,
   "duration_minutes_requested": 330.0,
   "time_control": {
     "base_seconds": 60.0,
@@ -15,7 +15,7 @@
   "book_prefix_plies": 6,
   "training_depth": "no_artificial_ply_cap",
   "max_plies": 0,
-  "seed": 20360943,
+  "seed": 20360944,
   "learning_policy": {
     "win": "accepted only if eval >= -100cp and gap <= 20cp",
     "draw": "accepted only if eval >= -100cp and gap <= 10cp",
@@ -36,36 +36,28 @@
     "depth_decay": "weighting only, not rejection: max(0.30, exp(-max(0, ply-40)/140))"
   },
   "results": {
-    "1-0": 13,
-    "0-1": 7,
-    "1/2-1/2": 93
+    "1-0": 10,
+    "0-1": 5,
+    "1/2-1/2": 99
   },
   "learning_decisions": {
-    "accept_draw": 7722,
-    "accept_win": 1329,
-    "reject_bad_eval": 167,
-    "reject_draw_gap": 673,
-    "reject_loss": 1365,
-    "reject_win_gap": 29
+    "accept_draw": 8300,
+    "accept_win": 1111,
+    "reject_bad_eval": 140,
+    "reject_draw_gap": 760,
+    "reject_loss": 1136,
+    "reject_win_gap": 20
   },
-  "unique_learned_moves": 8970,
-  "total_plies": 11948,
-  "total_engine_plies": 11285,
-  "total_search_seconds": 19807.816,
-  "total_searched_nodes": 19123453279,
-  "avg_search_ms_per_engine_ply": 1755.234,
-  "elapsed_seconds": 19837.208,
-  "games_per_hour": 20.51,
-  "prior_learned_moves": 19025,
-  "run_learned_moves": 9117,
-  "cumulative_learned_moves": 37364,
-  "enriched_book_bytes": 83128560,
-  "recovery": {
-    "recovered_run": 13,
-    "artifact_id": 11118731351,
-    "recovered_unique_learned_moves": 9227,
-    "cumulative_before_recovery": 28141,
-    "cumulative_after_recovery": 37364,
-    "note": "Recovered strict learning from Run 13 after its original selfplay/book build succeeded but final git push failed. Run 14 learning remains included."
-  }
+  "unique_learned_moves": 9333,
+  "total_plies": 12130,
+  "total_engine_plies": 11467,
+  "total_search_seconds": 20003.546,
+  "total_searched_nodes": 20011887934,
+  "avg_search_ms_per_engine_ply": 1744.445,
+  "elapsed_seconds": 20029.858,
+  "games_per_hour": 20.49,
+  "prior_learned_moves": 37364,
+  "run_learned_moves": 9457,
+  "cumulative_learned_moves": 46820,
+  "enriched_book_bytes": 83276960
 }
