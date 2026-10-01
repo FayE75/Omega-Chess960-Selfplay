@@ -11,13 +11,12 @@ import chess
 
 ENTRY = struct.Struct(">QHHI")
 UpdateMap = Dict[Tuple[int, int], int]
+SuppressionSet = set[Tuple[int, int]]
 POLYGLOT_MAX_WEIGHT = 65535
 
 
 def encode_polyglot_move(board: chess.Board, move: chess.Move) -> int:
     """Encode a python-chess move into the 16-bit Polyglot move format."""
-    # Polyglot represents castling as king-from -> rook-from. python-chess's
-    # helper performs that conversion for standard and Chess960 boards.
     poly_move = board._to_chess960(move) if board.is_castling(move) else move
     promo = 0
     if poly_move.promotion:
@@ -55,6 +54,39 @@ def save_updates(path: str | Path, updates: UpdateMap, metadata: dict | None = N
             {"key": f"{key:016x}", "move": move, "weight": int(weight)}
             for (key, move), weight in sorted(updates.items())
             if weight > 0
+        ],
+    }
+    opener = gzip.open if path.suffix == ".gz" else open
+    with opener(path, "wt", encoding="utf-8") as fh:
+        json.dump(payload, fh, separators=(",", ":"))
+
+
+def load_suppressions(path: str | Path | None) -> SuppressionSet:
+    if not path:
+        return set()
+    path = Path(path)
+    if not path.exists() or path.stat().st_size == 0:
+        return set()
+    opener = gzip.open if path.suffix == ".gz" else open
+    with opener(path, "rt", encoding="utf-8") as fh:
+        payload = json.load(fh)
+    return {
+        (int(item["key"], 16), int(item["move"]))
+        for item in payload.get("suppressions", [])
+    }
+
+
+def save_suppressions(
+    path: str | Path, suppressions: SuppressionSet, metadata: dict | None = None
+) -> None:
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "format": 1,
+        "metadata": metadata or {},
+        "suppressions": [
+            {"key": f"{key:016x}", "move": move}
+            for key, move in sorted(suppressions)
         ],
     }
     opener = gzip.open if path.suffix == ".gz" else open
@@ -118,11 +150,17 @@ def write_delta_book(path: str | Path, updates: UpdateMap) -> None:
                 out.write(ENTRY.pack(key, move, weight, learn))
 
 
-def build_enriched_book(seed_path: str | Path, out_path: str | Path, updates: UpdateMap) -> None:
-    """Stream-merge sparse learned weights into a large seed Polyglot book."""
+def build_enriched_book(
+    seed_path: str | Path,
+    out_path: str | Path,
+    updates: UpdateMap,
+    suppressions: SuppressionSet | None = None,
+) -> None:
+    """Stream-merge learned weights into a seed book, omitting suppressed key-move pairs."""
+    suppressed = suppressions or set()
     by_key: dict[int, dict[int, int]] = defaultdict(dict)
     for (key, move), weight in updates.items():
-        if weight > 0:
+        if weight > 0 and (key, move) not in suppressed:
             by_key[key][move] = by_key[key].get(move, 0) + int(weight)
 
     update_keys = sorted(by_key)
@@ -131,14 +169,19 @@ def build_enriched_book(seed_path: str | Path, out_path: str | Path, updates: Up
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
     def write_group(out, key: int, entries: list[tuple[int, int, int]]) -> None:
-        for move, weight, learn in sorted(normalize_weights(entries), key=lambda x: x[0]):
+        filtered = [entry for entry in entries if (key, entry[0]) not in suppressed]
+        for move, weight, learn in sorted(normalize_weights(filtered), key=lambda x: x[0]):
             out.write(ENTRY.pack(key, move, weight, learn))
 
     with open(out_path, "wb") as out:
         for seed_key, seed_entries in iter_seed_groups(seed_path):
             while ui < len(update_keys) and update_keys[ui] < seed_key:
                 key = update_keys[ui]
-                learned_only = [(move, weight, 0) for move, weight in by_key[key].items() if weight > 0]
+                learned_only = [
+                    (move, weight, 0)
+                    for move, weight in by_key[key].items()
+                    if weight > 0 and (key, move) not in suppressed
+                ]
                 write_group(out, key, learned_only)
                 ui += 1
 
@@ -146,11 +189,13 @@ def build_enriched_book(seed_path: str | Path, out_path: str | Path, updates: Up
             seen: set[int] = set()
             merged_entries: list[tuple[int, int, int]] = []
             for move, weight, learn in seed_entries:
+                if (seed_key, move) in suppressed:
+                    continue
                 learned = additions.get(move, 0)
                 merged_entries.append((move, int(weight) + int(learned), learn))
                 seen.add(move)
             for move, learned in additions.items():
-                if move not in seen and learned > 0:
+                if move not in seen and learned > 0 and (seed_key, move) not in suppressed:
                     merged_entries.append((move, int(learned), 0))
             write_group(out, seed_key, merged_entries)
 
@@ -159,6 +204,10 @@ def build_enriched_book(seed_path: str | Path, out_path: str | Path, updates: Up
 
         while ui < len(update_keys):
             key = update_keys[ui]
-            learned_only = [(move, weight, 0) for move, weight in by_key[key].items() if weight > 0]
+            learned_only = [
+                (move, weight, 0)
+                for move, weight in by_key[key].items()
+                if weight > 0 and (key, move) not in suppressed
+            ]
             write_group(out, key, learned_only)
             ui += 1
