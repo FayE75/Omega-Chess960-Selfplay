@@ -58,6 +58,14 @@
   "games_per_hour": 20.51,
   "prior_learned_moves": 19025,
   "run_learned_moves": 9117,
-  "cumulative_learned_moves": 28141,
-  "enriched_book_bytes": 82983472
+  "cumulative_learned_moves": 37364,
+  "enriched_book_bytes": 83128560,
+  "recovery": {
+    "recovered_run": 13,
+    "artifact_id": 11118731351,
+    "recovered_unique_learned_moves": 9227,
+    "cumulative_before_recovery": 28141,
+    "cumulative_after_recovery": 37364,
+    "note": "Recovered strict learning from Run 13 after its original selfplay/book build succeeded but final git push failed. Run 14 learning remains included."
+  }
 }
