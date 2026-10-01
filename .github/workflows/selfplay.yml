@@ -121,11 +121,16 @@ jobs:
       - name: Materialize recursively enriched active book
         run: |
           if [ -s learning/cumulative_updates.json.gz ]; then
+            SUPPRESS=""
+            if [ -s learning/book_suppressions.json.gz ]; then
+              SUPPRESS="--suppressions learning/book_suppressions.json.gz"
+            fi
             python scripts/materialize_active_book.py \
               --seed-book seed/c960_base.bin \
               --updates learning/cumulative_updates.json.gz \
+              $SUPPRESS \
               --out seed/c960_active.bin
-            echo "Using Nimas base + all previous selfplay learning"
+            echo "Using Nimas base + cumulative learning + adversarial suppressions"
           else
             cp seed/c960_base.bin seed/c960_active.bin
             echo "First generation: using original Nimas book"
@@ -191,13 +196,18 @@ jobs:
       - name: Build next cumulative enriched Polyglot book
         run: |
           PRIOR=""
+          SUPPRESS=""
           if [ -s learning/cumulative_updates.json.gz ]; then
             PRIOR="--prior-updates learning/cumulative_updates.json.gz"
+          fi
+          if [ -s learning/book_suppressions.json.gz ]; then
+            SUPPRESS="--suppressions learning/book_suppressions.json.gz"
           fi
           python scripts/build_book.py \
             --seed-book seed/c960_base.bin \
             --run-updates output/run_updates_strict.json.gz \
             $PRIOR \
+            $SUPPRESS \
             --cumulative-out output/cumulative_updates.json.gz \
             --enriched-out output/c960_enriched.bin \
             --delta-out output/c960_run_delta.bin \
