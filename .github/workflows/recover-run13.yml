@@ -1,0 +1,171 @@
+name: Recover Omega Run 13 Learning
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/recover-run13-trigger"
+
+permissions:
+  contents: write
+  actions: read
+
+concurrency:
+  group: omega-c960-production
+  cancel-in-progress: false
+
+jobs:
+  recover:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      RUN13_ARTIFACT_ID: '11118731351'
+      BASE_BOOK_URL: https://raw.githubusercontent.com/FayE75/NimasBot/main/books/c860/c960_280825_0508.bin
+
+    steps:
+      - name: Checkout latest selfplay state
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: main
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install python-chess
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends curl unzip
+
+      - name: Download original base book
+        run: |
+          set -euo pipefail
+          mkdir -p seed recovery output
+          curl -L --fail --retry 3 "$BASE_BOOK_URL" -o seed/c960_base.bin
+          test -s seed/c960_base.bin
+
+      - name: Download preserved raw Run 13 artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          url="https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/${RUN13_ARTIFACT_ID}/zip"
+          curl -L --fail --retry 3             -H "Authorization: Bearer ${GH_TOKEN}"             -H "Accept: application/vnd.github+json"             -H "X-GitHub-Api-Version: 2022-11-28"             "$url" -o recovery/run13.zip
+          unzip -o recovery/run13.zip -d recovery/run13
+          test -s recovery/run13/selfplay.pgn
+
+      - name: Recreate strict Run 13 learning
+        run: |
+          set -euo pipefail
+          python scripts/filter_pgn_learning.py             --pgn recovery/run13/selfplay.pgn             --out recovery/run13_strict.json.gz
+          test -s recovery/run13_strict.json.gz
+          python - <<'PY'
+          import sys
+          sys.path.insert(0, 'scripts')
+          from polyglot_utils import load_updates
+          n=len(load_updates('recovery/run13_strict.json.gz'))
+          print(f'Run 13 strict unique learned moves: {n}')
+          if n != 9227:
+              raise SystemExit(f'Run 13 strict entry count mismatch: {n} != 9227')
+          PY
+
+      - name: Merge Run 13 into latest cumulative state and rebuild book
+        run: |
+          set -euo pipefail
+          test -s learning/cumulative_updates.json.gz
+          test -s learning/latest_summary.json
+          python - <<'PY'
+          import json, sys
+          from pathlib import Path
+          sys.path.insert(0, 'scripts')
+          from polyglot_utils import load_updates, merge_updates, save_updates, write_delta_book, build_enriched_book
+
+          prior=load_updates('learning/cumulative_updates.json.gz')
+          recovered=load_updates('recovery/run13_strict.json.gz')
+          cumulative=merge_updates(prior,recovered)
+
+          save_updates(
+              'output/cumulative_updates.json.gz',
+              cumulative,
+              {
+                  'recovery':'Omega selfplay run 13',
+                  'source_artifact_id':11118731351,
+                  'prior_entries':len(prior),
+                  'recovered_run13_entries':len(recovered),
+                  'cumulative_entries':len(cumulative),
+              },
+          )
+          write_delta_book('output/c960_run13_recovered_delta.bin', recovered)
+          build_enriched_book('seed/c960_base.bin','output/c960_enriched.bin',cumulative)
+
+          summary=json.loads(Path('learning/latest_summary.json').read_text())
+          summary['cumulative_learned_moves']=len(cumulative)
+          summary['enriched_book_bytes']=Path('output/c960_enriched.bin').stat().st_size
+          summary['recovery']={
+              'recovered_run':13,
+              'artifact_id':11118731351,
+              'recovered_unique_learned_moves':len(recovered),
+              'cumulative_before_recovery':len(prior),
+              'cumulative_after_recovery':len(cumulative),
+              'note':'Recovered strict learning from Run 13 after its original selfplay/book build succeeded but final git push failed. Run 14 learning remains included.'
+          }
+          Path('output/summary.json').write_text(json.dumps(summary,indent=2)+'\n')
+          print(json.dumps(summary['recovery'],indent=2))
+          PY
+          test -s output/cumulative_updates.json.gz
+          test -s output/c960_enriched.bin
+
+      - name: Persist recovered cumulative state
+        run: |
+          set -euo pipefail
+          cp output/cumulative_updates.json.gz learning/cumulative_updates.json.gz
+          cp output/summary.json learning/latest_summary.json
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add learning/cumulative_updates.json.gz learning/latest_summary.json
+          git diff --cached --check
+          if ! git diff --cached --quiet; then
+            git commit -m "Recover Omega Run 13 cumulative learning [skip ci]"
+            for attempt in 1 2 3; do
+              git fetch origin main
+              if git rebase origin/main; then
+                if git push origin HEAD:main; then
+                  exit 0
+                fi
+              else
+                git rebase --abort || true
+                echo "Recovery rebase conflict; refusing to overwrite newer learning." >&2
+                exit 1
+              fi
+              echo "Recovery push race on attempt ${attempt}; retrying..."
+              sleep $((attempt * 2))
+            done
+            echo "Recovery push failed after retries." >&2
+            exit 1
+          fi
+
+      - name: Publish recovered enriched book
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          cp output/c960_enriched.bin output/c960_enriched_latest.bin
+          cp output/summary.json output/latest_summary.json
+          gh release upload book-latest             output/c960_enriched_latest.bin             output/latest_summary.json             --clobber
+
+      - name: Upload recovery audit artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: omega-c960-run13-recovery-${{ github.run_id }}
+          path: |
+            recovery/run13_strict.json.gz
+            output/cumulative_updates.json.gz
+            output/c960_run13_recovered_delta.bin
+            output/c960_enriched.bin
+            output/summary.json
+          if-no-files-found: error
+          retention-days: 30
