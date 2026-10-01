@@ -1,0 +1,23 @@
+name: Launch 108-game challenge after first trial
+
+on:
+  workflow_run:
+    workflows:
+      - Omega vs Latest Stockfish Book Challenge
+    types:
+      - completed
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  launch:
+    if: ${{ github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.run_number == 1 }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dispatch 108-game LTC challenge
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh workflow run omega-vs-stockfish.yml             --repo "${GITHUB_REPOSITORY}"             --ref main             -f games=108             -f tc_base_seconds=60             -f tc_increment_seconds=0.6             -f seed=0
