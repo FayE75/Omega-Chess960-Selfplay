@@ -1,7 +1,7 @@
 {
   "engine": "Omega-3ae6ac83823605c9a6fc69c40c2cd9dedc5de6a8",
-  "active_book_sha256": "961d98f8227e8568a89d5df7b142e597d4fd30b1ea66d2385227d4965f674c0c",
-  "games": 114,
+  "active_book_sha256": "a2660d9d1f19797d64ebd3da4ac5a7609ed93ff2830c6fc841d7650f555b517e",
+  "games": 112,
   "duration_minutes_requested": 330.0,
   "time_control": {
     "base_seconds": 60.0,
@@ -15,7 +15,7 @@
   "book_prefix_plies": 6,
   "training_depth": "no_artificial_ply_cap",
   "max_plies": 0,
-  "seed": 20360944,
+  "seed": 20360945,
   "learning_policy": {
     "win": "accepted only if eval >= -100cp and gap <= 20cp",
     "draw": "accepted only if eval >= -100cp and gap <= 10cp",
@@ -36,85 +36,29 @@
     "depth_decay": "weighting only, not rejection: max(0.30, exp(-max(0, ply-40)/140))"
   },
   "results": {
-    "1-0": 10,
-    "0-1": 5,
-    "1/2-1/2": 99
+    "1-0": 11,
+    "0-1": 6,
+    "1/2-1/2": 95
   },
   "learning_decisions": {
-    "accept_draw": 8300,
-    "accept_win": 1111,
-    "reject_bad_eval": 140,
-    "reject_draw_gap": 760,
-    "reject_loss": 1136,
-    "reject_win_gap": 20
+    "accept_draw": 8000,
+    "accept_win": 1161,
+    "reject_bad_eval": 279,
+    "reject_draw_gap": 743,
+    "reject_loss": 1191,
+    "reject_win_gap": 24
   },
-  "unique_learned_moves": 9333,
-  "total_plies": 12130,
-  "total_engine_plies": 11467,
-  "total_search_seconds": 20003.546,
-  "total_searched_nodes": 20011887934,
-  "avg_search_ms_per_engine_ply": 1744.445,
-  "elapsed_seconds": 20029.858,
-  "games_per_hour": 20.49,
-  "prior_learned_moves": 37364,
-  "run_learned_moves": 9457,
-  "cumulative_learned_moves": 47844,
-  "enriched_book_bytes": 83283488,
+  "unique_learned_moves": 9108,
+  "total_plies": 12039,
+  "total_engine_plies": 11398,
+  "total_search_seconds": 19805.457,
+  "total_searched_nodes": 15823917063,
+  "avg_search_ms_per_engine_ply": 1737.626,
+  "elapsed_seconds": 19837.27,
+  "games_per_hour": 20.33,
+  "prior_learned_moves": 47844,
+  "run_learned_moves": 9362,
+  "cumulative_learned_moves": 57199,
   "suppressed_book_moves": 25,
-  "latest_stockfish_match": {
-    "policy": "omega-vs-latest-stockfish-v1",
-    "omega": "Omega-3ae6ac83823605c9a6fc69c40c2cd9dedc5de6a8",
-    "stockfish": "Stockfish-49ea5ded38315cff8e67f4a677a9e7811612fbf6",
-    "games": 108,
-    "paired_colors": true,
-    "time_control": "60+0.6",
-    "threads_each": 1,
-    "hash_mb_each": 64,
-    "omega_book": "unlimited-ply active recursive Polyglot book",
-    "stockfish_book": "none",
-    "wdl_omega": {
-      "wins": 2,
-      "draws": 101,
-      "losses": 5
-    },
-    "by_omega_color": {
-      "white": {
-        "win": 1,
-        "draw": 53,
-        "loss": 0
-      },
-      "black": {
-        "win": 1,
-        "draw": 48,
-        "loss": 5
-      }
-    },
-    "score_percent": 48.6111,
-    "descriptive_elo": -9.653,
-    "elo_95ci_half_width": 16.595,
-    "positive_update_entries": 918,
-    "book_moves_suppressed_this_run": 23,
-    "stockfish_winner_move_entries": 393,
-    "action_counts": {
-      "omega_book_plies": 559,
-      "omega_draw_book_moves_reinforced": 527,
-      "omega_loss_book_moves_marked_for_removal": 23,
-      "omega_win_book_moves_reinforced": 9,
-      "stockfish_winner_moves_learned": 393
-    },
-    "search_seconds": {
-      "omega": 9272.702,
-      "stockfish": 9333.429
-    },
-    "searched_nodes": {
-      "omega": 7850789604,
-      "stockfish": 8148650990
-    },
-    "elapsed_seconds": 18637.413,
-    "notes": [
-      "Elo is descriptive from this paired WDL sample; the confidence interval can be wide for small recurring batches.",
-      "Polyglot keys include side to move, so suppressing an Omega move after a loss is inherently color-specific.",
-      "Stockfish receives no opening book. Omega may query its active book on every Omega turn with no ply cap."
-    ]
-  }
+  "enriched_book_bytes": 83430176
 }
