@@ -3,7 +3,7 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from polyglot_utils import build_enriched_book, load_updates
+from polyglot_utils import build_enriched_book, load_suppressions, load_updates
 
 
 def main() -> None:
@@ -12,15 +12,20 @@ def main() -> None:
     )
     p.add_argument("--seed-book", required=True)
     p.add_argument("--updates", required=True)
+    p.add_argument("--suppressions")
     p.add_argument("--out", required=True)
     args = p.parse_args()
 
     updates = load_updates(args.updates)
-    build_enriched_book(args.seed_book, args.out, updates)
+    suppressions = load_suppressions(args.suppressions)
+    build_enriched_book(args.seed_book, args.out, updates, suppressions)
     out = Path(args.out)
     if not out.exists() or out.stat().st_size == 0:
         raise RuntimeError("Active book materialization produced an empty file")
-    print(f"Materialized active book: {out} ({out.stat().st_size} bytes), learned entries={len(updates)}")
+    print(
+        f"Materialized active book: {out} ({out.stat().st_size} bytes), "
+        f"learned entries={len(updates)}, suppressed entries={len(suppressions)}"
+    )
 
 
 if __name__ == "__main__":
