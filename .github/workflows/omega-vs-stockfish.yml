@@ -1,0 +1,227 @@
+name: Omega vs Latest Stockfish Book Challenge
+
+on:
+  workflow_run:
+    workflows:
+      - Omega Chess960 Selfplay
+    types:
+      - completed
+  workflow_dispatch:
+    inputs:
+      games:
+        description: "Even number of paired-color LTC games"
+        required: true
+        default: "8"
+      tc_base_seconds:
+        description: "LTC base clock per side"
+        required: true
+        default: "60"
+      tc_increment_seconds:
+        description: "LTC increment per move"
+        required: true
+        default: "0.6"
+      seed:
+        description: "Random seed; 0 = derive from workflow run"
+        required: true
+        default: "0"
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/omega-vs-stockfish-trigger"
+
+permissions:
+  contents: write
+  actions: read
+
+concurrency:
+  group: omega-c960-production
+  cancel-in-progress: false
+
+jobs:
+  challenge:
+    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      BASE_BOOK_URL: https://raw.githubusercontent.com/FayE75/NimasBot/main/books/c860/c960_280825_0508.bin
+      GAMES: ${{ inputs.games || '8' }}
+      TC_BASE_SECONDS: ${{ inputs.tc_base_seconds || '60' }}
+      TC_INCREMENT_SECONDS: ${{ inputs.tc_increment_seconds || '0.6' }}
+      INPUT_SEED: ${{ inputs.seed || '0' }}
+
+    steps:
+      - name: Checkout latest book state
+        uses: actions/checkout@v5
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies and validate scripts
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          sudo apt-get update -qq
+          sudo apt-get install -y build-essential git curl
+          python -m py_compile scripts/*.py
+
+      - name: Clone latest Omega main
+        env:
+          OMEGA_PAT: ${{ secrets.OMEGA_PAT }}
+        run: |
+          test -n "$OMEGA_PAT" || { echo "Missing OMEGA_PAT repository secret"; exit 1; }
+          git clone --depth 1 --branch main --single-branch             "https://x-access-token:${OMEGA_PAT}@github.com/FayE75/Omega.git" Omega
+          OMEGA_SHA=$(git -C Omega rev-parse HEAD)
+          echo "OMEGA_SHA=$OMEGA_SHA" >> "$GITHUB_ENV"
+          git -C Omega log -1 --oneline
+
+      - name: Clone latest official Stockfish main
+        run: |
+          git clone --depth 1 --branch master --single-branch             https://github.com/official-stockfish/Stockfish.git Stockfish
+          STOCKFISH_SHA=$(git -C Stockfish rev-parse HEAD)
+          echo "STOCKFISH_SHA=$STOCKFISH_SHA" >> "$GITHUB_ENV"
+          git -C Stockfish log -1 --oneline
+
+      - name: Build Omega and Stockfish
+        run: |
+          set -euo pipefail
+          make -C Omega/src -j"$(nproc)" profile-build ARCH=x86-64-avx2 COMP=gcc
+          OMEGA_ENGINE=$(find Omega/src -maxdepth 2 -type f -executable -iname 'stockfish*' -print -quit)
+          test -n "$OMEGA_ENGINE"
+          cp "$OMEGA_ENGINE" ./omega
+          chmod +x ./omega
+
+          make -C Stockfish/src -j"$(nproc)" profile-build ARCH=x86-64-avx2 COMP=gcc
+          SF_ENGINE=$(find Stockfish/src -maxdepth 2 -type f -executable -iname 'stockfish*' -print -quit)
+          test -n "$SF_ENGINE"
+          cp "$SF_ENGINE" ./stockfish-latest
+          chmod +x ./stockfish-latest
+
+          ./omega bench >/tmp/omega-bench.txt 2>&1
+          ./stockfish-latest bench >/tmp/stockfish-bench.txt 2>&1
+          tail -8 /tmp/omega-bench.txt
+          tail -8 /tmp/stockfish-bench.txt
+
+      - name: Fetch base book and materialize latest active Omega book
+        run: |
+          set -euo pipefail
+          mkdir -p seed output-adversarial learning
+          curl --fail --location --retry 3 --retry-delay 3             "$BASE_BOOK_URL" -o seed/c960_base.bin
+          test -s seed/c960_base.bin
+          if [ -s learning/cumulative_updates.json.gz ]; then
+            SUPPRESS=""
+            if [ -s learning/book_suppressions.json.gz ]; then
+              SUPPRESS="--suppressions learning/book_suppressions.json.gz"
+            fi
+            python scripts/materialize_active_book.py               --seed-book seed/c960_base.bin               --updates learning/cumulative_updates.json.gz               $SUPPRESS               --out seed/c960_active.bin
+          else
+            cp seed/c960_base.bin seed/c960_active.bin
+          fi
+          test -s seed/c960_active.bin
+          sha256sum seed/c960_active.bin
+
+      - name: Resolve paired-match seed
+        run: |
+          SEED="$INPUT_SEED"
+          if [ "$SEED" = "0" ] || [ -z "$SEED" ]; then
+            SEED=$((20261001 + GITHUB_RUN_NUMBER + GITHUB_RUN_ATTEMPT * 100000))
+          fi
+          echo "RUN_SEED=$SEED" >> "$GITHUB_ENV"
+          echo "Challenge seed: $SEED"
+
+      - name: Run Omega vs latest Stockfish LTC
+        run: |
+          set -euo pipefail
+          echo "Omega may use its active book at any ply."
+          echo "Stockfish receives no book at all."
+          python -u scripts/omega_vs_stockfish.py             --omega ./omega             --stockfish ./stockfish-latest             --omega-book seed/c960_active.bin             --out-dir output-adversarial             --games "$GAMES"             --tc-base-seconds "$TC_BASE_SECONDS"             --tc-increment-seconds "$TC_INCREMENT_SECONDS"             --threads 1             --hash-mb 64             --multipv 3             --seed "$RUN_SEED"             --omega-id "Omega-${OMEGA_SHA}"             --stockfish-id "Stockfish-${STOCKFISH_SHA}"
+          cat output-adversarial/summary.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Apply WDL-driven adversarial learning to book
+        run: |
+          set -euo pipefail
+          PRIOR_SUPPRESS=""
+          PRIOR_SUMMARY=""
+          HISTORY=""
+          if [ -s learning/book_suppressions.json.gz ]; then
+            PRIOR_SUPPRESS="--prior-suppressions learning/book_suppressions.json.gz"
+          fi
+          if [ -s learning/latest_summary.json ]; then
+            PRIOR_SUMMARY="--prior-book-summary learning/latest_summary.json"
+          fi
+          if [ -s learning/stockfish_benchmark.json ]; then
+            HISTORY="--history-in learning/stockfish_benchmark.json"
+          fi
+          test -s learning/cumulative_updates.json.gz
+          python scripts/apply_adversarial_learning.py             --seed-book seed/c960_base.bin             --prior-updates learning/cumulative_updates.json.gz             $PRIOR_SUPPRESS             --positive-updates output-adversarial/adversarial_positive_updates.json.gz             --remove-pairs output-adversarial/remove_pairs.json.gz             --rehabilitate-pairs output-adversarial/rehabilitate_pairs.json.gz             --match-summary output-adversarial/summary.json             $PRIOR_SUMMARY             $HISTORY             --cumulative-out output-adversarial/cumulative_updates.json.gz             --suppressions-out output-adversarial/book_suppressions.json.gz             --enriched-out output-adversarial/c960_enriched.bin             --book-summary-out output-adversarial/latest_summary.json             --history-out output-adversarial/stockfish_benchmark.json
+          test -s output-adversarial/c960_enriched.bin
+          cat output-adversarial/stockfish_benchmark.json | python -m json.tool | tail -40 >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Persist adversarially enhanced book state
+        run: |
+          set -euo pipefail
+          cp output-adversarial/cumulative_updates.json.gz learning/cumulative_updates.json.gz
+          cp output-adversarial/book_suppressions.json.gz learning/book_suppressions.json.gz
+          cp output-adversarial/latest_summary.json learning/latest_summary.json
+          cp output-adversarial/stockfish_benchmark.json learning/stockfish_benchmark.json
+          cp output-adversarial/summary.json learning/latest_stockfish_match.json
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add             learning/cumulative_updates.json.gz             learning/book_suppressions.json.gz             learning/latest_summary.json             learning/stockfish_benchmark.json             learning/latest_stockfish_match.json
+
+          if ! git diff --cached --quiet; then
+            git commit -m "Learn from latest Stockfish Chess960 challenge [skip ci]"
+            for attempt in 1 2 3; do
+              git fetch origin main
+              if git rebase origin/main; then
+                if git push origin HEAD:main; then
+                  exit 0
+                fi
+              else
+                git rebase --abort || true
+                echo "Book-state conflict; refusing to overwrite newer learning." >&2
+                exit 1
+              fi
+              sleep $((attempt * 3))
+            done
+            echo "Failed to persist adversarial book state." >&2
+            exit 1
+          fi
+
+      - name: Publish adversarially enhanced latest book
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          cp output-adversarial/c960_enriched.bin output-adversarial/c960_enriched_latest.bin
+          cp output-adversarial/stockfish_benchmark.json output-adversarial/stockfish_benchmark_latest.json
+          if gh release view book-latest >/dev/null 2>&1; then
+            gh release upload book-latest               output-adversarial/c960_enriched_latest.bin               output-adversarial/latest_summary.json               output-adversarial/stockfish_benchmark_latest.json               --clobber
+          else
+            gh release create book-latest               output-adversarial/c960_enriched_latest.bin               output-adversarial/latest_summary.json               output-adversarial/stockfish_benchmark_latest.json               --title "Latest recursively enriched Chess960 book"               --notes "Omega recursive self-learning plus recurring LTC challenges against latest official Stockfish without a Stockfish book."
+          fi
+
+      - name: Upload adversarial match and book audit
+        uses: actions/upload-artifact@v4
+        with:
+          name: omega-vs-stockfish-${{ github.run_number }}
+          path: |
+            output-adversarial/omega-vs-stockfish.pgn
+            output-adversarial/summary.json
+            output-adversarial/summary.md
+            output-adversarial/adversarial_positive_updates.json.gz
+            output-adversarial/remove_pairs.json.gz
+            output-adversarial/rehabilitate_pairs.json.gz
+            output-adversarial/cumulative_updates.json.gz
+            output-adversarial/book_suppressions.json.gz
+            output-adversarial/c960_enriched.bin
+            output-adversarial/stockfish_benchmark.json
+          if-no-files-found: error
+          retention-days: 30
