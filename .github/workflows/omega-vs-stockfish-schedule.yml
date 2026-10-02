@@ -1,0 +1,25 @@
+name: Schedule Omega vs Latest Stockfish
+
+on:
+  schedule:
+    - cron: "17 */6 * * *"
+  workflow_dispatch:
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dispatch 108-game Omega vs latest Stockfish challenge
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh workflow run omega-vs-stockfish.yml \
+            --repo "${{ github.repository }}" \
+            -f games=108 \
+            -f tc_base_seconds=60 \
+            -f tc_increment_seconds=0.6 \
+            -f seed=0
