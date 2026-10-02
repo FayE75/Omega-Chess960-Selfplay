@@ -1,7 +1,7 @@
 {
   "engine": "Omega-3ae6ac83823605c9a6fc69c40c2cd9dedc5de6a8",
-  "active_book_sha256": "a2660d9d1f19797d64ebd3da4ac5a7609ed93ff2830c6fc841d7650f555b517e",
-  "games": 112,
+  "active_book_sha256": "61b594dfaadc3c3d299648e981e49bd71f53c6552dedc25620372d84b4ce99ff",
+  "games": 113,
   "duration_minutes_requested": 330.0,
   "time_control": {
     "base_seconds": 60.0,
@@ -15,7 +15,7 @@
   "book_prefix_plies": 6,
   "training_depth": "no_artificial_ply_cap",
   "max_plies": 0,
-  "seed": 20360945,
+  "seed": 20360946,
   "learning_policy": {
     "win": "accepted only if eval >= -100cp and gap <= 20cp",
     "draw": "accepted only if eval >= -100cp and gap <= 10cp",
@@ -36,29 +36,29 @@
     "depth_decay": "weighting only, not rejection: max(0.30, exp(-max(0, ply-40)/140))"
   },
   "results": {
-    "1-0": 11,
-    "0-1": 6,
-    "1/2-1/2": 95
+    "1-0": 12,
+    "0-1": 5,
+    "1/2-1/2": 96
   },
   "learning_decisions": {
-    "accept_draw": 8000,
-    "accept_win": 1161,
-    "reject_bad_eval": 279,
-    "reject_draw_gap": 743,
-    "reject_loss": 1191,
-    "reject_win_gap": 24
+    "accept_draw": 8305,
+    "accept_win": 1062,
+    "reject_bad_eval": 173,
+    "reject_draw_gap": 662,
+    "reject_loss": 1093,
+    "reject_win_gap": 27
   },
-  "unique_learned_moves": 9108,
-  "total_plies": 12039,
-  "total_engine_plies": 11398,
-  "total_search_seconds": 19805.457,
-  "total_searched_nodes": 15823917063,
-  "avg_search_ms_per_engine_ply": 1737.626,
-  "elapsed_seconds": 19837.27,
-  "games_per_hour": 20.33,
-  "prior_learned_moves": 47844,
-  "run_learned_moves": 9362,
-  "cumulative_learned_moves": 57199,
+  "unique_learned_moves": 9275,
+  "total_plies": 11972,
+  "total_engine_plies": 11322,
+  "total_search_seconds": 19831.151,
+  "total_searched_nodes": 24839039351,
+  "avg_search_ms_per_engine_ply": 1751.559,
+  "elapsed_seconds": 19853.907,
+  "games_per_hour": 20.49,
+  "prior_learned_moves": 57199,
+  "run_learned_moves": 9432,
+  "cumulative_learned_moves": 66629,
   "suppressed_book_moves": 25,
-  "enriched_book_bytes": 83430176
+  "enriched_book_bytes": 83578000
 }
