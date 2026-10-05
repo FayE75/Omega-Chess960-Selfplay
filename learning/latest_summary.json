@@ -58,7 +58,7 @@
   "games_per_hour": 20.49,
   "prior_learned_moves": 57199,
   "run_learned_moves": 9432,
-  "cumulative_learned_moves": 74779,
+  "cumulative_learned_moves": 75285,
   "suppressed_book_moves": 303,
   "enriched_book_bytes": 83618688,
   "latest_stockfish_match": {
@@ -73,44 +73,41 @@
     "omega_book": "unlimited-ply active recursive Polyglot book",
     "stockfish_book": "none",
     "wdl_omega": {
-      "wins": 1,
-      "draws": 104,
-      "losses": 3
+      "wins": 0,
+      "draws": 108,
+      "losses": 0
     },
     "by_omega_color": {
       "white": {
-        "win": 1,
-        "draw": 53,
+        "win": 0,
+        "draw": 54,
         "loss": 0
       },
       "black": {
         "win": 0,
-        "draw": 51,
-        "loss": 3
+        "draw": 54,
+        "loss": 0
       }
     },
-    "score_percent": 49.0741,
-    "descriptive_elo": -6.435,
-    "elo_95ci_half_width": 12.556,
-    "positive_update_entries": 677,
-    "book_moves_suppressed_this_run": 28,
-    "stockfish_winner_move_entries": 174,
+    "score_percent": 50.0,
+    "descriptive_elo": 0.0,
+    "elo_95ci_half_width": 0.0,
+    "positive_update_entries": 574,
+    "book_moves_suppressed_this_run": 0,
+    "stockfish_winner_move_entries": 0,
     "action_counts": {
-      "omega_book_plies": 537,
-      "omega_draw_book_moves_reinforced": 501,
-      "omega_loss_book_moves_marked_for_removal": 28,
-      "omega_win_book_moves_reinforced": 8,
-      "stockfish_winner_moves_learned": 177
+      "omega_book_plies": 581,
+      "omega_draw_book_moves_reinforced": 581
     },
     "search_seconds": {
-      "omega": 9318.802,
-      "stockfish": 9344.391
+      "omega": 9170.068,
+      "stockfish": 9203.059
     },
     "searched_nodes": {
-      "omega": 7828524867,
-      "stockfish": 8144279002
+      "omega": 11281818843,
+      "stockfish": 11594346130
     },
-    "elapsed_seconds": 18692.288,
+    "elapsed_seconds": 18394.271,
     "notes": [
       "Elo is descriptive from this paired WDL sample; the confidence interval can be wide for small recurring batches.",
       "Polyglot keys include side to move, so suppressing an Omega move after a loss is inherently color-specific.",
