@@ -4,13 +4,13 @@
   "omega_policy": "latest Omega main with unlimited-ply active recursive book",
   "caveat": "Aggregate spans changing Stockfish/Omega commits and is descriptive, not a controlled single-version Elo estimate.",
   "aggregate": {
-    "games": 2708,
-    "wins": 48,
-    "draws": 2534,
-    "losses": 126,
-    "score_percent": 48.5598,
-    "descriptive_elo": -10.01,
-    "elo_95ci_half_width": 3.298
+    "games": 2816,
+    "wins": 50,
+    "draws": 2639,
+    "losses": 127,
+    "score_percent": 48.6328,
+    "descriptive_elo": -9.503,
+    "elo_95ci_half_width": 3.2
   },
   "runs": [
     {
@@ -1456,6 +1456,62 @@
         "stockfish": 7915623064
       },
       "elapsed_seconds": 18513.293,
+      "notes": [
+        "Elo is descriptive from this paired WDL sample; the confidence interval can be wide for small recurring batches.",
+        "Polyglot keys include side to move, so suppressing an Omega move after a loss is inherently color-specific.",
+        "Stockfish receives no opening book. Omega may query its active book on every Omega turn with no ply cap."
+      ]
+    },
+    {
+      "policy": "omega-vs-latest-stockfish-v1",
+      "omega": "Omega-3ae6ac83823605c9a6fc69c40c2cd9dedc5de6a8",
+      "stockfish": "Stockfish-49ea5ded38315cff8e67f4a677a9e7811612fbf6",
+      "games": 108,
+      "paired_colors": true,
+      "time_control": "60+0.6",
+      "threads_each": 1,
+      "hash_mb_each": 64,
+      "omega_book": "unlimited-ply active recursive Polyglot book",
+      "stockfish_book": "none",
+      "wdl_omega": {
+        "wins": 2,
+        "draws": 105,
+        "losses": 1
+      },
+      "by_omega_color": {
+        "white": {
+          "win": 2,
+          "draw": 52,
+          "loss": 0
+        },
+        "black": {
+          "win": 0,
+          "draw": 53,
+          "loss": 1
+        }
+      },
+      "score_percent": 50.463,
+      "descriptive_elo": 3.217,
+      "elo_95ci_half_width": 10.905,
+      "positive_update_entries": 593,
+      "book_moves_suppressed_this_run": 6,
+      "stockfish_winner_move_entries": 64,
+      "action_counts": {
+        "omega_book_plies": 545,
+        "omega_draw_book_moves_reinforced": 534,
+        "omega_loss_book_moves_marked_for_removal": 6,
+        "omega_win_book_moves_reinforced": 5,
+        "stockfish_winner_moves_learned": 64
+      },
+      "search_seconds": {
+        "omega": 9538.93,
+        "stockfish": 9482.964
+      },
+      "searched_nodes": {
+        "omega": 7974846280,
+        "stockfish": 8184859995
+      },
+      "elapsed_seconds": 19054.77,
       "notes": [
         "Elo is descriptive from this paired WDL sample; the confidence interval can be wide for small recurring batches.",
         "Polyglot keys include side to move, so suppressing an Omega move after a loss is inherently color-specific.",
