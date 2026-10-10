@@ -10,44 +10,44 @@
   "omega_book": "unlimited-ply active recursive Polyglot book",
   "stockfish_book": "none",
   "wdl_omega": {
-    "wins": 1,
-    "draws": 105,
-    "losses": 2
+    "wins": 2,
+    "draws": 98,
+    "losses": 8
   },
   "by_omega_color": {
     "white": {
-      "win": 1,
-      "draw": 53,
-      "loss": 0
+      "win": 2,
+      "draw": 50,
+      "loss": 2
     },
     "black": {
       "win": 0,
-      "draw": 52,
-      "loss": 2
+      "draw": 48,
+      "loss": 6
     }
   },
-  "score_percent": 49.537,
-  "descriptive_elo": -3.217,
-  "elo_95ci_half_width": 10.905,
-  "positive_update_entries": 819,
-  "book_moves_suppressed_this_run": 21,
-  "stockfish_winner_move_entries": 170,
+  "score_percent": 47.2222,
+  "descriptive_elo": -19.322,
+  "elo_95ci_half_width": 19.665,
+  "positive_update_entries": 988,
+  "book_moves_suppressed_this_run": 25,
+  "stockfish_winner_move_entries": 519,
   "action_counts": {
-    "omega_book_plies": 679,
-    "omega_draw_book_moves_reinforced": 653,
-    "omega_loss_book_moves_marked_for_removal": 21,
-    "omega_win_book_moves_reinforced": 5,
-    "stockfish_winner_moves_learned": 170
+    "omega_book_plies": 508,
+    "omega_draw_book_moves_reinforced": 476,
+    "omega_loss_book_moves_marked_for_removal": 25,
+    "omega_win_book_moves_reinforced": 7,
+    "stockfish_winner_moves_learned": 520
   },
   "search_seconds": {
-    "omega": 9028.538,
-    "stockfish": 9162.657
+    "omega": 9210.79,
+    "stockfish": 9271.918
   },
   "searched_nodes": {
-    "omega": 7420771472,
-    "stockfish": 7806679337
+    "omega": 7610331506,
+    "stockfish": 7915623064
   },
-  "elapsed_seconds": 18221.611,
+  "elapsed_seconds": 18513.293,
   "notes": [
     "Elo is descriptive from this paired WDL sample; the confidence interval can be wide for small recurring batches.",
     "Polyglot keys include side to move, so suppressing an Omega move after a loss is inherently color-specific.",
